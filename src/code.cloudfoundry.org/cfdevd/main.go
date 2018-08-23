@@ -13,6 +13,8 @@ import (
 
 	"code.cloudfoundry.org/cfdevd/cmd"
 	"code.cloudfoundry.org/cfdev/daemon"
+	"flag"
+	"time"
 )
 
 const SockName = "ListenSocket"
@@ -41,16 +43,16 @@ func registerSignalHandler() {
 	}(sigc)
 }
 
-func install(programSrc string) {
+func install(programSrc string, args []string) {
 	lctl := daemon.New("")
 	program := "/Library/PrivilegedHelperTools/org.cloudfoundry.cfdevd"
+	programArgs := []string{program}
+	programArgs = append(programArgs, args...)
 	cfdevdSpec := daemon.DaemonSpec{
-		Label:   "org.cloudfoundry.cfdevd",
-		Program: program,
-		ProgramArguments: []string{
-			program,
-		},
-		RunAtLoad: false,
+		Label:            "org.cloudfoundry.cfdevd",
+		Program:          program,
+		ProgramArguments: programArgs,
+		RunAtLoad:        false,
 		Sockets: map[string]string{
 			SockName: "/var/tmp/cfdevd.socket",
 		},
@@ -99,7 +101,20 @@ func uninstall(prog string) {
 	}
 }
 
+func timesync(socket string) {
+	for {
+		fmt.Printf("dialing socket %s \n", socket)
+		net.Dial("unix", socket)
+		time.Sleep(10 * time.Second)
+	}
+}
+
 func run() {
+	var timesyncSocket = flag.String("timesyncSock", "", "unix socket for timesync")
+	flag.Parse()
+	if *timesyncSocket != "" {
+		go timesync(*timesyncSocket)
+	}
 	registerSignalHandler()
 	listeners, err := daemon.Listeners(SockName)
 	if err != nil || len(listeners) != 1 {
@@ -124,13 +139,15 @@ func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "install":
-			install(os.Args[0])
+			fmt.Printf("Installing args=%+v", os.Args)
+			install(os.Args[0], os.Args[1:])
 		case "uninstall":
 			uninstall(os.Args[0])
 		default:
 			log.Fatal("unrecognized command ", os.Args[1])
 		}
 	} else {
+		fmt.Printf("Running args=%+v", os.Args)
 		run()
 	}
 }
